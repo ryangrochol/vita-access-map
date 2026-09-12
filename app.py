@@ -5,7 +5,7 @@ import plotly.express as px
 import streamlit as st
 
 
-# Configure the webpage
+# Configure the page
 st.set_page_config(
     page_title="VITA Access Map",
     page_icon="📊",
@@ -13,14 +13,14 @@ st.set_page_config(
 )
 
 
-# Locate the processed dataset
+# Load the final processed dataset
 project_root = Path(__file__).parent
 
 data_path = (
     project_root
     / "data"
     / "processed"
-    / "preliminary_need_ranking.csv"
+    / "final_need_ranking.csv"
 )
 
 
@@ -37,40 +37,85 @@ def load_data():
 
 
 data = load_data()
-# Adjustable model weights
+
+
+# Sidebar: adjustable weights
 st.sidebar.header("Adjust the Need Score")
 
 st.sidebar.write(
     """
-    Change how much each community indicator contributes to the score.
-    The weights always total 100%.
+    Adjust how much each community indicator contributes. The app
+    automatically converts your choices into weights totaling 100%.
     """
 )
 
-poverty_weight_percent = st.sidebar.slider(
-    "Poverty weight",
+poverty_input = st.sidebar.slider(
+    "Poverty",
     min_value=0,
     max_value=100,
-    value=50,
+    value=35,
     step=5
 )
 
-disability_weight_percent = 100 - poverty_weight_percent
-
-st.sidebar.metric(
-    "Disability weight",
-    f"{disability_weight_percent}%"
+disability_input = st.sidebar.slider(
+    "Disability",
+    min_value=0,
+    max_value=100,
+    value=20,
+    step=5
 )
 
-poverty_weight = poverty_weight_percent / 100
-disability_weight = disability_weight_percent / 100
+language_input = st.sidebar.slider(
+    "Limited English",
+    min_value=0,
+    max_value=100,
+    value=25,
+    step=5
+)
 
+internet_input = st.sidebar.slider(
+    "No internet access",
+    min_value=0,
+    max_value=100,
+    value=20,
+    step=5
+)
+
+weight_total = (
+    poverty_input
+    + disability_input
+    + language_input
+    + internet_input
+)
+
+if weight_total == 0:
+    st.sidebar.error("At least one weight must be greater than zero.")
+    st.stop()
+
+poverty_weight = poverty_input / weight_total
+disability_weight = disability_input / weight_total
+language_weight = language_input / weight_total
+internet_weight = internet_input / weight_total
+
+st.sidebar.subheader("Normalized weights")
+
+st.sidebar.write(
+    f"""
+    - Poverty: **{poverty_weight:.0%}**
+    - Disability: **{disability_weight:.0%}**
+    - Limited English: **{language_weight:.0%}**
+    - No internet: **{internet_weight:.0%}**
+    """
+)
+
+
+# Recalculate the score
 data["adjusted_need_score"] = (
     poverty_weight * data["poverty_z"]
     + disability_weight * data["disability_z"]
+    + language_weight * data["limited_english_z"]
+    + internet_weight * data["no_internet_z"]
 )
-
-
 
 
 # Introduction
@@ -91,45 +136,42 @@ st.write(
 
 st.info(
     """
-    This preliminary score currently uses poverty and disability rates.
-    It does not determine individual eligibility for VITA services or
-    provide tax advice.
+    The score is a community-level exploratory measure. It does not determine
+    individual VITA eligibility or provide tax advice.
     """
 )
 
 st.link_button(
-    "Find an Official VITA/TCE Site",
+    "Find Current VITA/TCE Sites",
     "https://freetaxassistance.for.irs.gov/s/sitelocator"
-)
-
-st.caption(
-    """
-    The IRS site locator is updated primarily during filing season,
-    generally from February through April. Listings may be limited
-    outside that period.
-    """
 )
 
 
 # Summary metrics
-column1, column2, column3 = st.columns(3)
+metric1, metric2, metric3, metric4 = st.columns(4)
 
-with column1:
+with metric1:
     st.metric(
         "ZIP codes analyzed",
         len(data)
     )
 
-with column2:
+with metric2:
     st.metric(
         "Highest poverty rate",
         f"{data['poverty_rate'].max():.1f}%"
     )
 
-with column3:
+with metric3:
     st.metric(
-        "Highest disability rate",
-        f"{data['disability_rate'].max():.1f}%"
+        "Highest limited-English rate",
+        f"{data['limited_english_rate'].max():.1f}%"
+    )
+
+with metric4:
+    st.metric(
+        "Highest no-internet rate",
+        f"{data['no_internet_rate'].max():.1f}%"
     )
 
 
@@ -150,6 +192,8 @@ map_figure = px.scatter_map(
     hover_data={
         "poverty_rate": ":.1f",
         "disability_rate": ":.1f",
+        "limited_english_rate": ":.1f",
+        "no_internet_rate": ":.1f",
         "eitc_rate": ":.1f",
         "adjusted_need_score": ":.2f",
         "latitude": False,
@@ -157,6 +201,14 @@ map_figure = px.scatter_map(
         "zip_code": False,
         "city": False,
         "location": False
+    },
+    labels={
+        "poverty_rate": "Poverty rate (%)",
+        "disability_rate": "Disability rate (%)",
+        "limited_english_rate": "Limited-English rate (%)",
+        "no_internet_rate": "No-internet rate (%)",
+        "eitc_rate": "EITC claim rate (%)",
+        "adjusted_need_score": "Need score"
     },
     color_continuous_scale="YlOrRd",
     size_max=25,
@@ -184,35 +236,64 @@ st.plotly_chart(
 )
 
 st.caption(
-    """
-    Marker color represents the preliminary need score. Marker size
-    represents the poverty rate. Locations are approximate ZIP Code
-    Tabulation Area representative coordinates.
+       """
+    Marker color represents the adjustable need score. Marker size represents
+    poverty rate. Marker locations are Census ZCTA representative coordinates.
     """
 )
 
 
-# Rankings
-st.header("Preliminary Community-Need Ranking")
+# Community ranking
+st.header("Community-Need Ranking")
 
-top_10 = data.sort_values(
+ranked_data = data.sort_values(
     "adjusted_need_score",
     ascending=False
-).head(10)
+).reset_index(drop=True)
+
+top_10 = ranked_data.head(10)
 
 st.dataframe(
     top_10[
         [
-            "zip_code",
-            "city",
+            "location",
             "poverty_rate",
             "disability_rate",
+            "limited_english_rate",
+            "no_internet_rate",
             "eitc_rate",
             "adjusted_need_score"
         ]
     ],
     hide_index=True,
-    use_container_width=True
+    use_container_width=True,
+    column_config={
+        "location": "Community",
+        "poverty_rate": st.column_config.NumberColumn(
+            "Poverty (%)",
+            format="%.1f"
+        ),
+        "disability_rate": st.column_config.NumberColumn(
+            "Disability (%)",
+            format="%.1f"
+        ),
+        "limited_english_rate": st.column_config.NumberColumn(
+            "Limited English (%)",
+            format="%.1f"
+        ),
+        "no_internet_rate": st.column_config.NumberColumn(
+            "No Internet (%)",
+            format="%.1f"
+        ),
+        "eitc_rate": st.column_config.NumberColumn(
+            "EITC Claims (%)",
+            format="%.1f"
+        ),
+        "adjusted_need_score": st.column_config.NumberColumn(
+            "Need Score",
+            format="%.2f"
+        )
+    }
 )
 
 chart_data = top_10[
@@ -222,8 +303,8 @@ chart_data = top_10[
 st.bar_chart(chart_data)
 
 
-# Individual ZIP-code explorer
-st.header("Explore a ZIP Code")
+# Individual ZIP explorer
+st.header("Explore a Community")
 
 selected_location = st.selectbox(
     "Choose a city and ZIP code",
@@ -234,27 +315,41 @@ selected_data = data[
     data["location"] == selected_location
 ].iloc[0]
 
-metric1, metric2, metric3, metric4 = st.columns(4)
+row1_col1, row1_col2, row1_col3 = st.columns(3)
 
-with metric1:
+with row1_col1:
     st.metric(
         "Poverty rate",
         f"{selected_data['poverty_rate']:.1f}%"
     )
 
-with metric2:
+with row1_col2:
     st.metric(
         "Disability rate",
         f"{selected_data['disability_rate']:.1f}%"
     )
 
-with metric3:
+with row1_col3:
+    st.metric(
+        "Limited-English rate",
+        f"{selected_data['limited_english_rate']:.1f}%"
+    )
+
+row2_col1, row2_col2, row2_col3 = st.columns(3)
+
+with row2_col1:
+    st.metric(
+        "No-internet rate",
+        f"{selected_data['no_internet_rate']:.1f}%"
+    )
+
+with row2_col2:
     st.metric(
         "EITC claim rate",
         f"{selected_data['eitc_rate']:.1f}%"
     )
 
-with metric4:
+with row2_col3:
     st.metric(
         "Adjusted need score",
         f"{selected_data['adjusted_need_score']:.2f}"
@@ -262,37 +357,40 @@ with metric4:
 
 
 # Methodology
-st.header("Current Methodology")
+st.header("Methodology")
 
 st.write(
     f"""
-    Poverty and disability rates were standardized using z-scores.
+    Each indicator is standardized using a z-score so variables measured on
+    different scales can be compared.
 
-    The current model assigns:
+    The current adjusted score uses:
 
-    - **{poverty_weight_percent}%** weight to poverty
-    - **{disability_weight_percent}%** weight to disability
+    - **{poverty_weight:.0%} poverty**
+    - **{disability_weight:.0%} disability**
+    - **{language_weight:.0%} limited English**
+    - **{internet_weight:.0%} no internet access**
 
-    **Adjusted need score =**
-    **({poverty_weight:.2f} × poverty z-score) +**
-    **({disability_weight:.2f} × disability z-score)**
-
-    Positive scores indicate above-average estimated need relative to
-    the other ZIP codes included in the analysis.
+    Moving the sidebar controls recalculates the score, ranking, and map.
+    This sensitivity analysis demonstrates how modeling choices affect which
+    communities are prioritized.
     """
 )
 
 st.warning(
     """
-    The score is an exploratory community-level measure. It should not be
-    interpreted as an individual eligibility determination, proof of unmet
-    demand, or tax advice.
+    This analysis does not estimate individual eligibility or prove that a
+    community is underserved. ACS values are survey estimates, and ZIP Code
+    Tabulation Areas do not perfectly match postal ZIP codes or county
+    boundaries. The IRS site locator is seasonal and is updated primarily
+    during filing season.
     """
 )
 
 st.caption(
     """
-    Sources: IRS Statistics of Income 2022 ZIP Code Data, 2022 American
-    Community Survey 5-Year Estimates, and 2022 Census Gazetteer Files.
+    Sources: IRS Statistics of Income 2022 ZIP Code Data, U.S. Census Bureau
+    2022 American Community Survey 5-Year Estimates, and 2022 Census
+    Gazetteer Files.
     """
 )
