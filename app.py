@@ -37,6 +37,40 @@ def load_data():
 
 
 data = load_data()
+# Adjustable model weights
+st.sidebar.header("Adjust the Need Score")
+
+st.sidebar.write(
+    """
+    Change how much each community indicator contributes to the score.
+    The weights always total 100%.
+    """
+)
+
+poverty_weight_percent = st.sidebar.slider(
+    "Poverty weight",
+    min_value=0,
+    max_value=100,
+    value=50,
+    step=5
+)
+
+disability_weight_percent = 100 - poverty_weight_percent
+
+st.sidebar.metric(
+    "Disability weight",
+    f"{disability_weight_percent}%"
+)
+
+poverty_weight = poverty_weight_percent / 100
+disability_weight = disability_weight_percent / 100
+
+data["adjusted_need_score"] = (
+    poverty_weight * data["poverty_z"]
+    + disability_weight * data["disability_z"]
+)
+
+
 
 
 # Introduction
@@ -110,14 +144,14 @@ map_figure = px.scatter_map(
     map_data,
     lat="latitude",
     lon="longitude",
-    color="preliminary_need_score",
+    color="adjusted_need_score",
     size="poverty_rate",
     hover_name="location",
     hover_data={
         "poverty_rate": ":.1f",
         "disability_rate": ":.1f",
         "eitc_rate": ":.1f",
-        "preliminary_need_score": ":.2f",
+        "adjusted_need_score": ":.2f",
         "latitude": False,
         "longitude": False,
         "zip_code": False,
@@ -162,7 +196,7 @@ st.caption(
 st.header("Preliminary Community-Need Ranking")
 
 top_10 = data.sort_values(
-    "preliminary_need_score",
+    "adjusted_need_score",
     ascending=False
 ).head(10)
 
@@ -174,7 +208,7 @@ st.dataframe(
             "poverty_rate",
             "disability_rate",
             "eitc_rate",
-            "preliminary_need_score"
+            "adjusted_need_score"
         ]
     ],
     hide_index=True,
@@ -182,8 +216,8 @@ st.dataframe(
 )
 
 chart_data = top_10[
-    ["zip_code", "preliminary_need_score"]
-].set_index("zip_code")
+    ["location", "adjusted_need_score"]
+].set_index("location")
 
 st.bar_chart(chart_data)
 
@@ -222,8 +256,8 @@ with metric3:
 
 with metric4:
     st.metric(
-        "Preliminary need score",
-        f"{selected_data['preliminary_need_score']:.2f}"
+        "Adjusted need score",
+        f"{selected_data['adjusted_need_score']:.2f}"
     )
 
 
@@ -231,14 +265,20 @@ with metric4:
 st.header("Current Methodology")
 
 st.write(
-    """
-    Poverty and disability rates were standardized using z-scores and
-    assigned equal weight.
+    f"""
+    Poverty and disability rates were standardized using z-scores.
 
-    **Preliminary need score = (poverty z-score + disability z-score) / 2**
+    The current model assigns:
 
-    Positive scores indicate above-average estimated need relative to the
-    other ZIP codes included in the analysis.
+    - **{poverty_weight_percent}%** weight to poverty
+    - **{disability_weight_percent}%** weight to disability
+
+    **Adjusted need score =**
+    **({poverty_weight:.2f} × poverty z-score) +**
+    **({disability_weight:.2f} × disability z-score)**
+
+    Positive scores indicate above-average estimated need relative to
+    the other ZIP codes included in the analysis.
     """
 )
 
