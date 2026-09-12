@@ -63,6 +63,19 @@ st.info(
     """
 )
 
+st.link_button(
+    "Find an Official VITA/TCE Site",
+    "https://freetaxassistance.for.irs.gov/s/sitelocator"
+)
+
+st.caption(
+    """
+    The IRS site locator is updated primarily during filing season,
+    generally from February through April. Listings may be limited
+    outside that period.
+    """
+)
+
 
 # Summary metrics
 column1, column2, column3 = st.columns(3)
