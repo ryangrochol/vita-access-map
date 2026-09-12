@@ -38,6 +38,22 @@ def load_data():
 
 data = load_data()
 
+# Calculate standardized values inside the app
+z_score_columns = {
+    "poverty_rate": "poverty_z",
+    "disability_rate": "disability_z",
+    "limited_english_rate": "limited_english_z",
+    "no_internet_rate": "no_internet_z"
+}
+
+for original_column, z_column in z_score_columns.items():
+    mean = data[original_column].mean()
+    standard_deviation = data[original_column].std(ddof=0)
+
+    data[z_column] = (
+        data[original_column] - mean
+    ) / standard_deviation
+
 
 # Sidebar: adjustable weights
 st.sidebar.header("Adjust the Need Score")
